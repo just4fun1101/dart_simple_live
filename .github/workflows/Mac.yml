@@ -1,0 +1,56 @@
+name: Build-Mac-App
+
+on:
+  # manual trigger
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch or tag to build"
+        required: false
+        default: master
+
+jobs:
+  mac:
+    runs-on: macos-latest           # macOS 14 today → macOS 15 from Aug 4 2025
+    permissions:
+      contents: write               # needed to upload artifacts
+
+    steps:
+      # 1️⃣  Checkout the revision the user picked in the dispatch form
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref }}
+
+      # 2️⃣  Install Flutter 3.22.x + cache its SDK & pub cache
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.22.x" # matches upstream target （see README）
+          cache: true
+
+      # 3️⃣  Enable desktop support and pull dependencies
+      - run: flutter config --enable-macos-desktop
+      - run: |
+          cd simple_live_app
+          flutter pub get
+
+      # 4️⃣  Install packagers ─ appdmg (DMG) + flutter_distributor
+      - run: npm i -g appdmg
+      - run: dart pub global activate flutter_distributor
+
+      # 5️⃣  Build the Release .app and wrap it as DMG & ZIP
+      - name: Build macOS release
+        run: |
+          cd simple_live_app
+          flutter_distributor package \
+            --platform macos \
+            --targets dmg,zip \
+            --skip-clean   # uses the build you just compiled
+
+      # 6️⃣  Upload artefacts so you can download them from the run page
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SimpleLive-macOS
+          path: |
+            simple_live_app/build/dist/*/*.dmg
+            simple_live_app/build/dist/*/*.zip
